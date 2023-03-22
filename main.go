@@ -35,20 +35,20 @@ const getDataFnTmpl string = `async function getData(){ const r = await fetch("h
     }); return r.json()}; getData()`
 
 type ItemDetails struct {
-	AuctionID   string  `json:"auctionID"`
-	ItemID      string  `json:"itemID"`
-	Title       string  `json:"title"`
-	LotSize     int     `json:"numOfItems"`
-	LotCode     string  `json:"lotCode"`
-	CurrentBid  float64 `json:"currentBid"`
-	NextBid     float64 `json:"nextBid"`
-	HighBidder  int     `json:"highBidder"`
-	Condition   string  `json:"condition"`
-	BidsEnabled bool    `json:"bidsEnabled"`
-	EndTime     string  `json:"endTimeText"`
-	EndDate     string  `json:"endDateText"`
-	WeekendPickupAvailable bool `json:"weekendPickupAvailable"`
-	PickupDates []time.Time `json:"pickupDates"`
+	AuctionID              string      `json:"auctionID"`
+	ItemID                 string      `json:"itemID"`
+	Title                  string      `json:"title"`
+	LotSize                int         `json:"numOfItems"`
+	LotCode                string      `json:"lotCode"`
+	CurrentBid             float64     `json:"currentBid"`
+	NextBid                float64     `json:"nextBid"`
+	HighBidder             int         `json:"highBidder"`
+	Condition              string      `json:"condition"`
+	BidsEnabled            bool        `json:"bidsEnabled"`
+	EndTime                string      `json:"endTimeText"`
+	EndDate                string      `json:"endDateText"`
+	WeekendPickupAvailable bool        `json:"weekendPickupAvailable"`
+	PickupDates            []time.Time `json:"pickupDates"`
 }
 type Items map[string]map[string]ItemDetails // mapping of auction IDs to a mapping of item IDs to matched items
 func writeResults(filename string, contents []byte) {
@@ -95,6 +95,33 @@ func genLocationsMap(ctx context.Context) map[string]map[string]string {
 	return locationsMap
 }
 
+func getLocations(locations []string, allLocations map[string]map[string]string) []string {
+	selectedLocationIDs := []string{}
+	regexFilterTmpl := `(?i)\b%s\b`
+	for _, loc := range locations {
+		filter := regexp.MustCompile(fmt.Sprintf(regexFilterTmpl, loc))
+		if _, ok := allLocations[loc]; ok {
+			for _, id := range allLocations[loc] {
+				selectedLocationIDs = append(selectedLocationIDs, id)
+			}
+		} else {
+			for _, locationsInState := range allLocations {
+				_, ok := locationsInState[loc]
+				if ok {
+					selectedLocationIDs = append(selectedLocationIDs, locationsInState[loc])
+				} else {
+					for city, locationID := range locationsInState {
+						if filter.MatchString(city) {
+							selectedLocationIDs = append(selectedLocationIDs, locationID)
+						}
+					}
+				}
+			}
+		}
+	}
+	return selectedLocationIDs
+}
+
 func scrape(ctx context.Context, searchTerm string) {
 	ctx, cancel := chromedp.NewContext(ctx)
 	defer cancel()
@@ -102,12 +129,14 @@ func scrape(ctx context.Context, searchTerm string) {
 	locations := genLocationsMap(ctx)
 
 	fmt.Printf("%+v\n", locations)
-	testLoc := locations["Kentucky"]["Cynthiana"]
-	testLoc2 := locations["Kentucky"]["Louisville - Shepherdsville Rd"]
-	testLoc3 := locations["Kentucky"]["Georgetown - Lexington"]
-	testLoc4 := locations["Ohio"]["Mansfield"]
-	testLoc5 := locations["Illinois"]["IL, Germantown"]
-	testLocs := []string{testLoc, testLoc2, testLoc3, testLoc4, testLoc5}
+	testLocs := getLocations([]string{"Louisville", "Germantown", "Lexington", "cincinnati"}, locations)
+	fmt.Println(testLocs)
+	// testLoc := locations["Kentucky"]["Cynthiana"]
+	// testLoc2 := locations["Kentucky"]["Louisville - Shepherdsville Rd"]
+	// testLoc3 := locations["Kentucky"]["Georgetown - Lexington"]
+	// testLoc4 := locations["Ohio"]["Mansfield"]
+	// testLoc5 := locations["Illinois"]["IL, Germantown"]
+	// testLocs := []string{testLoc, testLoc2, testLoc3, testLoc4, testLoc5}
 	testLocsEnc, _ := json.Marshal(testLocs)
 	selectOptScript := fmt.Sprintf(`Array.from(document.querySelectorAll("option[value]")).filter((ov) => {return %s.indexOf(ov.value) > -1 }).forEach((v) => {v.selected = true}); window.filterAuctionFun('filterAuctions');`, string(testLocsEnc))
 	tmp := []byte{}
@@ -265,7 +294,7 @@ func scrape(ctx context.Context, searchTerm string) {
 						if searchTermFilter.Match([]byte(title)) {
 							if _, ok := matchedItems[auctionID]; !ok {
 								matchedItems[auctionID] = map[string]ItemDetails{}
-							} 
+							}
 							detail := ItemDetails{}
 							detail.Title = title
 							detail.LotCode = lotCode
@@ -296,7 +325,7 @@ func scrape(ctx context.Context, searchTerm string) {
 						itemIDkey := fmt.Sprintf("%d", respItem.ID)
 						if _, ok := matchedItems[auctionID][itemIDkey]; ok {
 							newItem := matchedItems[auctionID][itemIDkey]
-						newItem.LotSize = respItem.Quantity
+							newItem.LotSize = respItem.Quantity
 							newItem.CurrentBid = respItem.CurrentBid
 							newItem.NextBid = respItem.NextBid
 							newItem.HighBidder = respItem.HighBidder
