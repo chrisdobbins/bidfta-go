@@ -15,7 +15,9 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-func scrape(ctx context.Context, searchTerm string) {
+// how to use jq to get weekend pickups: jq '. | to_entries | .[] | .value | to_entries | .[] | select(.value.weekendPickupAvailable == true)' generator.json
+func scrape(ctx context.Context, searchTerm string, locations []string) {
+	fmt.Println("scraping")
 	ctx, cancel := chromedp.NewContext(ctx)
 	defer cancel()
 	login(ctx)
@@ -28,8 +30,12 @@ func scrape(ctx context.Context, searchTerm string) {
 		}
 	}
 	fmt.Printf("%+v\n", locationsMap)
-	testLocs := getLocations([]string{"Kentucky", "Illinois", "Ohio"}, locationsMap)
-	testLocsEnc, _ := json.Marshal(testLocs)
+	selectedLocations := []string{"Kentucky", "Illinois", "Ohio"} //:= getLocations([]string{"Kentucky", "Illinois", "Ohio"}, locationsMap)
+	if len(locations) > 0 {
+		selectedLocations = locations
+	}
+	locs := getLocations(selectedLocations, locationsMap)
+	testLocsEnc, _ := json.Marshal(locs)
 	selectOptScript := fmt.Sprintf(`Array.from(document.querySelectorAll("option[value]")).filter((ov) => {return %s.indexOf(ov.value) > -1 }).forEach((v) => {v.selected = true}); window.filterAuctionFun('filterAuctions');`, string(testLocsEnc))
 	tmp := []byte{}
 	matchedItems := Items{}
@@ -44,6 +50,7 @@ func scrape(ctx context.Context, searchTerm string) {
 	chromedp.Run(ctx,
 		chromedp.Sleep(time.Duration(delay)*time.Millisecond),
 		chromedp.WaitVisible("form#filterAuctions > div#location-optionClass-container", chromedp.ByQuery),
+		chromedp.Sleep(3000*time.Millisecond),
 		chromedp.EvaluateAsDevTools(selectOptScript, &tmp),
 		chromedp.Sleep(time.Duration(delay)*time.Millisecond),
 	)
@@ -195,7 +202,10 @@ func scrape(ctx context.Context, searchTerm string) {
 							} else {
 								locationID = v
 							}
-							location, _ := idsToLocations[locationID]
+							location, ok := idsToLocations[locationID]
+							if !ok {
+								fmt.Printf("WARN: location not found for %+v in the map\n", locationID)
+							}
 							fmt.Println("location: ", location)
 							detail := ItemDetails{}
 							detail.Location = location

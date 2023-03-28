@@ -23,7 +23,7 @@ import (
 )
 
 // const onlyNew = true
-const tzOffset string = "-05:00"
+const tzOffset string = "-04:00"
 const getDataFnTmpl string = `async function getData(){ const r = await fetch("https://www.bidfta.com/bidfta/getUpdateItems", {
    "headers": {'X-CSRF-Token': $("meta[name='_csrf']").attr("content"), "Accept": "application/json", "Content-Type": "application/json"
     },
@@ -61,13 +61,13 @@ func writeResults(filename string, contents []byte) {
 }
 
 func genRand() (int, error) {
-	bigNum, err := rand.Int(rand.Reader, big.NewInt(17121))
+	bigNum, err := rand.Int(rand.Reader, big.NewInt(27121))
 	if err != nil {
 		fmt.Printf("genRand failed to create random number: %v", err)
 		return 0, err
 	}
 	num := int(bigNum.Int64())
-	return num + 518, nil
+	return num + 15518, nil
 }
 
 const getLocationsScript string = `// top level: keys are state names, vals are objs
@@ -85,14 +85,15 @@ let locMap = Array.from(document.querySelectorAll("select#selectedLocationIds > 
 
 func genLocationsMap(ctx context.Context) map[string]map[string]string {
 	locationsMap := map[string]map[string]string{}
-	tmp := []byte{}
+	// tmp := []byte{}
 	raw := []byte{}
 	chromedp.Run(ctx,
 		chromedp.Sleep(5*time.Second),
 		chromedp.Navigate("https://www.bidfta.com/home"),
-		chromedp.EvaluateAsDevTools(`document.querySelector("body > div.ub-emb-container > div > div > div.ub-emb-scroll-wrapper > div.ub-emb-iframe-wrapper.ub-emb-visible > button").click();`, &tmp),
+		// chromedp.EvaluateAsDevTools(`document.querySelector("body > div.ub-emb-container > div > div > div.ub-emb-scroll-wrapper > div.ub-emb-iframe-wrapper.ub-emb-visible > button").click();`, &tmp),
 		chromedp.Sleep(2*time.Second),
 		chromedp.Evaluate(getLocationsScript, &raw),
+		chromedp.Sleep(5*time.Second),
 	)
 	json.Unmarshal(raw, &locationsMap)
 	return locationsMap
@@ -197,94 +198,6 @@ func isWeekend(day time.Time) bool {
 	return false
 }
 
-type bidData struct {
-	itemID    string
-	bidderID  string
-	auctionID string
-	maxBid    float64
-}
-
-func bid(ctx context.Context, b bidData) {
-	select {
-	case <-ctx.Done():
-		fmt.Println("context expired!")
-		return
-	default:
-	}
-	maxBid := fmt.Sprintf("%.2f", b.maxBid)
-	auctionURL := fmt.Sprintf("https://www.bidfta.com/itemDetails?listView=true&idauctions=%s&idItems=%s", b.auctionID, b.itemID)
-	bidderID := b.bidderID
-	auctionID := b.auctionID
-	itemID := b.itemID
-	var currentBid string
-	type Item struct {
-		ID          int     `json:"id"`
-		AuctionID   int     `json:"auctionId"`
-		Qty         int     `json:"quantity"`
-		IsClosed    bool    `json: "itemClosed"`
-		ItemEndDate string  `json:"itemEndDateText"`
-		ItemEndTime string  `json:"itemEndTimeText"`
-		CurrentBid  float64 `json:"currentBid"`
-		NextBid     float64 `json:"nextBid"`
-		HighBidder  int     `json:"highBidder"`
-		MaxBid      float64 `json:"maxBid"`
-		SecureItem  bool    `json:"secureItem"`
-	}
-	type EndTimeResp struct {
-		Items []Item `json:"items"`
-	}
-	getEndTimeFn := fmt.Sprintf(`async function getEndTime(){ const r = await fetch("https://www.bidfta.com/bidfta/getUpdateItems", {
-   "headers": {'X-CSRF-Token': $("meta[name='_csrf']").attr("content"), "Accept": "application/json", "Content-Type": "application/json"
-    },
-   "referrerPolicy": "strict-origin-when-cross-origin",
-   "body": "{\"idBidders\":\"%s\",\"idItems\":[%s],\"idauctions\":\"%s\"}",
-   "method": "POST",
-   "mode": "cors",
-   "credentials": "include"
-    }); return r.json()}; getEndTime()`, bidderID, itemID, auctionID)
-	endTime := []byte{}
-	resp := EndTimeResp{}
-	chromedp.Run(ctx,
-		chromedp.Sleep(7*time.Second),
-		chromedp.Navigate(auctionURL),
-		chromedp.Sleep(9*time.Second),
-		chromedp.Evaluate(getEndTimeFn, &endTime, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
-			return p.WithAwaitPromise(true)
-		}),
-	)
-	json.Unmarshal(endTime, &resp)
-	fmt.Printf("Response: %+v\n", resp)
-
-	itemEndTime := resp.Items[0].ItemEndTime
-	itemEndDate := resp.Items[0].ItemEndDate
-	// timeFormatFilter := regexp.MustCompile(`\.[0-9]+$`)
-	// formattedTime := timeFormatFilter.ReplaceAllString(itemEndTime, "")
-	// timeToParse := fmt.Sprintf("%sT%s%s", itemEndDate, formattedTime, tzOffset)
-	// parsedEndTime, _ := time.Parse(time.RFC3339, timeToParse)
-	parsedEndTime := parseDayAndTime(itemEndDate, itemEndTime)
-	timeLeft := time.Until(parsedEndTime)
-	fmt.Printf("time left: %v\n", timeLeft)
-
-	if maxBid < currentBid {
-		fmt.Println("current bid exceeds max bid")
-		return
-	}
-	// if timeLeft.Hours() > float64(720*1.0) {
-	// 	fmt.Printf("time left: %v\n", timeLeft)
-	// 	return
-	// }
-
-	maxBidFn := fmt.Sprintf(`window.placeAjaxMaxBid(%s, %s, "%.2f", "%.2f")`, itemID, auctionID, resp.Items[0].CurrentBid, b.maxBid)
-
-	tmp := []byte{}
-	chromedp.Run(
-		ctx,
-		chromedp.Sleep(20*time.Second),
-		chromedp.Evaluate(maxBidFn, &tmp),
-		chromedp.Sleep(5777*time.Second),
-	)
-}
-
 func watch(ctx context.Context, auctionID, itemID int) {
 	getDataFn := fmt.Sprintf(`async function getData(){ const r = await fetch("https://www.bidfta.com/bidfta/getUpdateItems", {
    "headers": {'X-CSRF-Token': $("meta[name='_csrf']").attr("content"), "Accept": "application/json", "Content-Type": "application/json"
@@ -325,8 +238,7 @@ func watch(ctx context.Context, auctionID, itemID int) {
 		)
 		json.Unmarshal(respRaw, &resp)
 		fmt.Printf("response: %+v\n", resp)
-		chromedp.Run(ctx,
-			chromedp.Sleep(1*time.Hour))
+		time.Sleep(5 * time.Minute)
 	}
 }
 
@@ -357,8 +269,15 @@ var pw string
 var includeUsed bool
 var bidderID int
 var validActions map[string]struct{}
-var locationOpts []string
+
+// var locationOpts []string
 var action string
+var auctionID string
+var itemID string
+var maxBid float64
+var selectedLocation string
+var headless bool
+var now bool // bidding now rather than waiting...mostly used for debugging
 
 func init() {
 	const (
@@ -372,6 +291,12 @@ func init() {
 	validActions["generate-map"] = struct{}{} // this generates the mapping between location IDs and individual auctions by grabbing the first few letters of a sample auction for each location and writing them to loc-to-auc.json
 	flag.StringVar(&searchTerm, "search-term", defaultSearchTerm, "item to search for")
 	flag.StringVar(&action, "action", defaultAction, "action to take. one of: 'scrape', 'bid', watch', 'generate-map'")
+	flag.StringVar(&auctionID, "auction-id", "", "auction ID")
+	flag.StringVar(&itemID, "item-id", "", "item ID")
+	flag.Float64Var(&maxBid, "max-bid", 0.00, "max bid")
+	flag.StringVar(&selectedLocation, "location", "", "locations to search")
+	flag.BoolVar(&headless, "headless", false, "headless mode (default: false)")
+	flag.BoolVar(&now, "now", false, "bid now (default: false)")
 	// flag.StringVar(&username, "username", defaultUsername, "login name")
 	// flag.StringVar(&pw, "password", defaultPw, "password")
 }
@@ -405,7 +330,15 @@ func main() {
 	if _, ok := validActions[action]; !ok {
 		log.Fatalf("invalid action: %s", action)
 	}
-	opts := append(chromedp.DefaultExecAllocatorOptions[:2], chromedp.DefaultExecAllocatorOptions[3:]...)
+	var opts []func(*chromedp.ExecAllocator)
+	fmt.Println("headless: ", headless)
+	// time.Sleep(2 * time.Hour)
+	if headless {
+		opts = chromedp.DefaultExecAllocatorOptions[:]
+	} else {
+		opts = chromedp.DefaultExecAllocatorOptions[:2]
+		opts = append(opts, chromedp.DefaultExecAllocatorOptions[3:]...) // don't run headlessly
+	}
 	ctx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	defer cancel()
 	ctx, cancel = chromedp.NewContext(ctx)
@@ -419,25 +352,26 @@ func main() {
 		fileContents, _ := json.Marshal(locAucIDMap)
 		writeResults("loc-to-auc.json", fileContents)
 	case "scrape":
-		scrape(ctx, searchTerm)
+		scrape(ctx, searchTerm, []string{selectedLocation})
 	case "bid":
 		// // bid on item:
+		defer cancel()
+		fmt.Println(maxBid)
 		login(ctx)
-		// TODO: make these cli options
-		auctionID := "238578"
-		itemID := "19919112"
-		maxBid := 6.66
 		d := bidData{
 			auctionID: auctionID,
-			bidderID:  "85357",
+			bidderID:  fmt.Sprintf("%d", bidderID),
 			itemID:    itemID,
 			maxBid:    maxBid,
 		}
+		fmt.Println(d)
 		bid(ctx, d)
 	case "watch":
 		// find items:
-		itemID := 20074699
-		auctionID := 239673
+		// itemID := 20074699
+		// auctionID := 239673
+		auctionID, _ := strconv.Atoi(auctionID)
+		itemID, _ := strconv.Atoi(itemID)
 		watch(context.Background(), auctionID, itemID)
 	}
 }
