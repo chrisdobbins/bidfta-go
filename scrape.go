@@ -30,11 +30,13 @@ func scrape(ctx context.Context, searchTerm string, locations []string) {
 		}
 	}
 	fmt.Printf("%+v\n", locationsMap)
-	selectedLocations := []string{"Kentucky", "Illinois", "Ohio"} //:= getLocations([]string{"Kentucky", "Illinois", "Ohio"}, locationsMap)
-	if len(locations) > 0 {
-		selectedLocations = locations
+	defaultLocations := []string{"Kentucky", "Illinois", "Ohio"}
+	if len(locations) == 0 || (len(locations) == 1 && len(locations[0]) == 0) {
+		locations = defaultLocations
 	}
-	locs := getLocations(selectedLocations, locationsMap)
+	locs := getLocations(locations, locationsMap)
+	fmt.Println("locations: ", len(locs))
+	fmt.Printf("%+v\n", locs)
 	testLocsEnc, _ := json.Marshal(locs)
 	selectOptScript := fmt.Sprintf(`Array.from(document.querySelectorAll("option[value]")).filter((ov) => {return %s.indexOf(ov.value) > -1 }).forEach((v) => {v.selected = true}); window.filterAuctionFun('filterAuctions');`, string(testLocsEnc))
 	tmp := []byte{}
@@ -158,6 +160,8 @@ func scrape(ctx context.Context, searchTerm string, locations []string) {
 				chromedp.Evaluate(`document.querySelector("span.total.total_page").innerText`, &totalNumOfItemPages),
 			)
 			itemPages, _ := strconv.Atoi(strings.Replace(string(totalNumOfItemPages), `"`, "", -1))
+			fmt.Printf("%d pages of matched auctions\n", itemPages)
+			fmt.Println("processing page 1")
 			for currItemPage := 0; currItemPage < itemPages; currItemPage++ {
 				func(currPage int) {
 
