@@ -58,9 +58,13 @@ func scrape(ctx context.Context, searchTerm string, locations []string) {
 	)
 
 	defer func(matchedItems Items) {
+		if len(matchedItems) == 0 {
+			return
+		}
 		fileContents, err := json.MarshalIndent(matchedItems, "", " ")
 		if err != nil {
 			fmt.Println("failed to marshal json: ", err)
+			return
 		}
 		writeResults(fmt.Sprintf("%s.json", searchTerm), fileContents)
 	}(matchedItems)
@@ -81,6 +85,7 @@ func scrape(ctx context.Context, searchTerm string, locations []string) {
 	// iter over auctions; get urls
 	auctionNodes := []*cdp.Node{}
 	for i := 1; i < totalNumOfPages+1; i++ {
+		fmt.Println("processing page ", i)
 		delay, _ = genRand()
 		fmt.Printf("delay of %+v\n", time.Duration(delay)*time.Millisecond)
 		chromedp.Run(ctx,
@@ -160,8 +165,7 @@ func scrape(ctx context.Context, searchTerm string, locations []string) {
 				chromedp.Evaluate(`document.querySelector("span.total.total_page").innerText`, &totalNumOfItemPages),
 			)
 			itemPages, _ := strconv.Atoi(strings.Replace(string(totalNumOfItemPages), `"`, "", -1))
-			fmt.Printf("%d pages of matched auctions\n", itemPages)
-			fmt.Println("processing page 1")
+			fmt.Printf("%d page(s) of potential item matches\n", itemPages)
 			for currItemPage := 0; currItemPage < itemPages; currItemPage++ {
 				func(currPage int) {
 

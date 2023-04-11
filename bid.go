@@ -88,9 +88,32 @@ type EndTimeResp struct {
 // 	return nil
 // }
 
+func calcPollInterval(timeLeft time.Duration) time.Duration {
+	// switch {
+	// case timeLeft.Hours() >= 24.00:
+	// 	return 12
+	// case timeLeft.Hours() >= 12.00:
+	// 	return 8
+	// case timeLeft.Hours() >= 8.00:
+	// 	return 4
+	// case timeLeft.Hours() >= 4.00:
+
+	// }
+
+	if timeLeft.Hours() >= 24.0 {
+		return 8 * time.Hour
+	}
+	if timeLeft.Hours() >= 12.0 {
+		return 4 * time.Hour
+		// return 8
+	}
+	if timeLeft.Minutes() > 4.20 {
+		return timeLeft / 4
+	}
+	return 2500 * time.Millisecond
+}
+
 func bid(ctx context.Context, b bidData) {
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
 	var timeLeft time.Duration
 	var endTime time.Time
 	// maxBid := fmt.Sprintf("%.2f", b.maxBid)
@@ -113,6 +136,10 @@ func bid(ctx context.Context, b bidData) {
 		chromedp.Navigate(auctionURL),
 		chromedp.Sleep(19*time.Second),
 	)
+	// var lastUpdateTime *time.Time
+	ticker := time.NewTicker(8 * time.Second)
+	defer ticker.Stop()
+	var emptyTime time.Time
 	for {
 		select {
 		case <-ctx.Done():
@@ -120,6 +147,7 @@ func bid(ctx context.Context, b bidData) {
 			return
 		case <-ticker.C:
 
+			fmt.Println("new tick")
 			endTimeRaw := []byte{}
 			resp := EndTimeResp{}
 			chromedp.Run(ctx,
@@ -138,8 +166,14 @@ func bid(ctx context.Context, b bidData) {
 			// timeToParse := fmt.Sprintf("%sT%s%s", itemEndDate, formattedTime, tzOffset)
 			// parsedEndTime, _ := time.Parse(time.RFC3339, timeToParse)
 			endTime = parseDayAndTime(itemEndDate, itemEndTime)
+			if endTime == emptyTime {
+				continue
+			}
 			timeLeft = time.Until(endTime)
 			fmt.Printf("time left: %v\n", timeLeft)
+			if timeLeft < 0*time.Millisecond {
+				return
+			}
 
 			currentBid := resp.Items[0].CurrentBid
 			if maxBid < currentBid {
@@ -147,7 +181,11 @@ func bid(ctx context.Context, b bidData) {
 				return
 			}
 			fmt.Println(timeLeft)
-			if !now && timeLeft >= 75*time.Second {
+			if !now && timeLeft >= 73000*time.Millisecond {
+				nextInterval := calcPollInterval(timeLeft)
+				fmt.Printf("next poll cycle at: %v\n", time.Now().Add(nextInterval))
+				ticker.Reset(nextInterval)
+				// ticker.Reset(3 * time.Minute)
 				continue
 			}
 
@@ -157,13 +195,14 @@ func bid(ctx context.Context, b bidData) {
 			tmp := []byte{}
 			chromedp.Run(
 				ctx,
-				chromedp.Sleep(12*time.Second),
+				chromedp.Sleep(100*time.Millisecond),
 				chromedp.Evaluate(maxBidFn, &tmp),
 				chromedp.Sleep(5777*time.Second),
 			)
 			return
-		default:
-			return
+			// default:
+			// return
+			// continue
 		}
 	}
 }

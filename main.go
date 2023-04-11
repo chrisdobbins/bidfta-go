@@ -161,6 +161,14 @@ func main() {
 	bidderID = int(id)
 	auctionsToLocations = make(map[string]string)
 
+	// fmt.Println(calcPollInterval(50 * time.Hour))
+	// var lastUpdateTime *time.Time
+	// if lastUpdateTime == nil {
+	// 	lastUpdateTime = &time.Time{}
+	// 	*(lastUpdateTime) = time.Now()
+	// }
+	// fmt.Println(lastUpdateTime)
+	// time.Sleep(20 * time.Hour)
 	flag.Parse()
 	if _, ok := validActions[action]; !ok {
 		log.Fatalf("invalid action: %s", action)
